@@ -1,4 +1,4 @@
-# Mac Clipboard Board
+# Clip Poppy [Mac Clipboard Board]
 
 A lightweight macOS clipboard history app inspired by the Windows clipboard board. It opens with Command + Shift + V, shows a small floating clipboard history window, and lets you paste a previous copied text back into the last focused input field.
 
