@@ -33,7 +33,7 @@ struct ClipboardItem: Equatable {
 final class ClipboardStore {
     private(set) var items: [ClipboardItem] = []
     private var changeCount = NSPasteboard.general.changeCount
-    private let maxItems = 40
+    private let maxItems = 8
 
     func start() {
         Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] _ in
