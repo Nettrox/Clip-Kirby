@@ -29,11 +29,7 @@ install: app
 	mkdir -p "$(USER_APPS_DIR)"
 	ditto "$(APP_BUILD_DIR)" "$(INSTALLED_APP)"
 	xattr -dr com.apple.quarantine "$(INSTALLED_APP)" 2>/dev/null || true
-	echo "Installed: $(INSTALLED_APP)"
-
-restart: install
-	osascript -e 'tell application "Clip Kirby" to quit' 2>/dev/null || true
-	open "$(INSTALLED_APP)"
+	open "$(USER_APPS_DIR)"
 
 echo-login-plist:
 	mkdir -p "$(LAUNCH_AGENTS_DIR)"
@@ -57,12 +53,15 @@ echo-login-plist:
 enable-login: install echo-login-plist
 	launchctl unload "$(LAUNCH_AGENT_PLIST)" 2>/dev/null || true
 	launchctl load "$(LAUNCH_AGENT_PLIST)"
-	echo "Login startup enabled for $(APP_NAME)."
+
+restart: install
+	osascript -e 'tell application "Clip Kirby" to quit' 2>/dev/null || true
+	open "$(INSTALLED_APP)"
 
 disable-login:
 	launchctl unload "$(LAUNCH_AGENT_PLIST)" 2>/dev/null || true
 	if [ -f "$(LAUNCH_AGENT_PLIST)" ]; then rm "$(LAUNCH_AGENT_PLIST)"; fi
-	echo "Login startup disabled for $(APP_NAME)."
 
 clean:
 	swift package clean
+	rm -rf build

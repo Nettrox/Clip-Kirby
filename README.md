@@ -1,54 +1,43 @@
 # Clip Kirby
 
-Clip Kirby is a lightweight macOS clipboard history app inspired by the Windows clipboard board. It opens with Command + Shift + V, shows a small floating clipboard history window, and pastes a previously copied text back into the last focused input field.
+Clip Kirby is a small macOS clipboard history app. It opens with Command + Shift + V, shows your recent copied text in a Kirby pink clipboard board, and pastes the selected item into the last focused input field.
 
 ## Requirements
 
 - macOS 13 or newer
 - Swift 5.9 or newer
-- Accessibility permission enabled for Clip Kirby
 
-## Restart after changes
-
-```bash
-make restart
-```
-
-## Important paste permission note
-
-Paste uses the clipboard plus a simulated Command + V event sent back to the previously active app.
-
-If clicking or pressing Enter does not paste after rebuilding:
-
-1. Open System Settings.
-2. Go to Privacy & Security > Accessibility.
-3. Remove Clip Kirby if it already exists.
-4. Add Clip Kirby again from `~/Applications/Clip Kirby.app`.
-5. Quit and reopen Clip Kirby.
-
-## App icon
-
-Put your app icon here:
+## Install
 
 ```bash
-Resources/AppIcon.icns
+make install
 ```
 
-## Menu bar icon
-
-Your current menu bar icon file is supported:
+This builds the app and installs it to:
 
 ```bash
-Resources/StatusIcon.png
+~/Applications/Clip Kirby.app
 ```
 
-Recommended image style:
+## Run
 
-- `.png`
-- Transparent background
-- 64x64 is supported
+```bash
+open "$HOME/Applications/Clip Kirby.app"
+```
 
-After replacing the image, run:
+## Start automatically on login
+
+```bash
+make enable-login
+```
+
+## Stop automatic login start
+
+```bash
+make disable-login
+```
+
+## Rebuild and reopen after changes
 
 ```bash
 make restart
@@ -56,15 +45,8 @@ make restart
 
 ## Usage
 
-- Command + Shift + V: Open the clipboard board.
-- Up Arrow / Down Arrow: Move through clipboard history items.
-- Enter: Paste the selected clipboard item into the previously focused input field.
-- Mouse click: Paste the clicked clipboard item into the previously focused input field.
-- Escape: Close the clipboard board and return focus to the previous app.
-- Search field: Filter clipboard history items by text.
-
-## Notes
-
-Clip Kirby runs as a menu-bar style background app and does not open a terminal window when launched from the generated `.app` bundle.
-
-The app keeps clipboard history only while it is running. It does not store clipboard data permanently on disk.
+- Command + Shift + V: Open Clip Kirby.
+- Up Arrow / Down Arrow: Select an item.
+- Enter: Paste the selected item.
+- Mouse click: Paste the clicked item.
+- Escape: Close Clip Kirby.

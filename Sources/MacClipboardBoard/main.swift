@@ -2,53 +2,90 @@ import AppKit
 import Carbon
 import ApplicationServices
 
-final class ClipboardItem: Equatable {
+extension NSColor {
+    convenience init(hex: String) {
+        var value: UInt64 = 0
+        Scanner(string: hex.replacingOccurrences(of: "#", with: "")).scanHexInt64(&value)
+        self.init(
+            red: CGFloat((value >> 16) & 255) / 255,
+            green: CGFloat((value >> 8) & 255) / 255,
+            blue: CGFloat(value & 255) / 255,
+            alpha: 1
+        )
+    }
+}
+
+enum Theme {
+    static let pink = NSColor(hex: "#f06993")
+    static let darkPink = NSColor(hex: "#d84e7a")
+    static let palePink = NSColor(hex: "#ffd3e1")
+    static let text = NSColor.white
+    static let secondaryText = NSColor.white.withAlphaComponent(0.78)
+    static let card = NSColor.white.withAlphaComponent(0.16)
+    static let cardBorder = NSColor.white.withAlphaComponent(0.18)
+}
+
+struct ClipboardItem: Equatable {
     let text: String
     let date: Date
-
-    init(text: String, date: Date = Date()) {
-        self.text = text
-        self.date = date
-    }
-
-    static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
-        lhs.text == rhs.text
-    }
 }
 
 final class ClipboardStore {
     private(set) var items: [ClipboardItem] = []
-    private var lastChangeCount = NSPasteboard.general.changeCount
+    private var changeCount = NSPasteboard.general.changeCount
     private let maxItems = 40
 
     func start() {
-        Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
-            self?.checkClipboard()
+        Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] _ in
+            self?.sync()
         }
     }
 
-    func checkClipboard() {
+    func sync() {
         let pasteboard = NSPasteboard.general
-        guard pasteboard.changeCount != lastChangeCount else { return }
-        lastChangeCount = pasteboard.changeCount
-
+        guard pasteboard.changeCount != changeCount else { return }
+        changeCount = pasteboard.changeCount
         guard let text = pasteboard.string(forType: .string) else { return }
-        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanText.isEmpty else { return }
-
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         items.removeAll { $0.text == text }
-        items.insert(ClipboardItem(text: text), at: 0)
-
+        items.insert(ClipboardItem(text: text, date: Date()), at: 0)
         if items.count > maxItems {
-            items = Array(items.prefix(maxItems))
+            items.removeLast(items.count - maxItems)
         }
     }
 
-    func setClipboard(_ text: String) {
+    func write(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        lastChangeCount = pasteboard.changeCount
+        changeCount = pasteboard.changeCount
+    }
+}
+
+final class PasteTarget {
+    private weak var app: NSRunningApplication?
+    private var focusedElement: AXUIElement?
+
+    func capture() {
+        let currentPid = NSRunningApplication.current.processIdentifier
+        guard let frontmost = NSWorkspace.shared.frontmostApplication else { return }
+        guard frontmost.processIdentifier != currentPid else { return }
+        app = frontmost
+        focusedElement = nil
+
+        let axApp = AXUIElementCreateApplication(frontmost.processIdentifier)
+        var value: CFTypeRef?
+        if AXUIElementCopyAttributeValue(axApp, kAXFocusedUIElementAttribute as CFString, &value) == .success, let value {
+            focusedElement = (value as! AXUIElement)
+        }
+    }
+
+    func restore() {
+        guard let app, !app.isTerminated else { return }
+        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        if let focusedElement {
+            AXUIElementSetAttributeValue(focusedElement, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        }
     }
 }
 
@@ -57,83 +94,116 @@ final class ClipboardPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-protocol BoardSearchFieldKeyDelegate: AnyObject {
-    func boardSearchFieldDidPressEscape()
-    func boardSearchFieldDidPressEnter()
-    func boardSearchFieldDidPressArrowUp()
-    func boardSearchFieldDidPressArrowDown()
+protocol SearchFieldKeys: AnyObject {
+    func searchPressedEscape()
+    func searchPressedEnter()
+    func searchPressedUp()
+    func searchPressedDown()
 }
 
-final class BoardSearchField: NSSearchField {
-    weak var keyDelegate: BoardSearchFieldKeyDelegate?
+final class SearchField: NSSearchField {
+    weak var keys: SearchFieldKeys?
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 53:
-            keyDelegate?.boardSearchFieldDidPressEscape()
-        case 36, 76:
-            keyDelegate?.boardSearchFieldDidPressEnter()
-        case 126:
-            keyDelegate?.boardSearchFieldDidPressArrowUp()
-        case 125:
-            keyDelegate?.boardSearchFieldDidPressArrowDown()
-        default:
-            super.keyDown(with: event)
+        case 53: keys?.searchPressedEscape()
+        case 36, 76: keys?.searchPressedEnter()
+        case 126: keys?.searchPressedUp()
+        case 125: keys?.searchPressedDown()
+        default: super.keyDown(with: event)
         }
     }
 }
 
-protocol ClipboardTableViewClickDelegate: AnyObject {
-    func clipboardTableViewDidClickRow(_ row: Int)
+final class RowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        Theme.darkPink.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 8, dy: 4), xRadius: 14, yRadius: 14).fill()
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {}
 }
 
-final class ClipboardTableView: NSTableView {
-    weak var clickDelegate: ClipboardTableViewClickDelegate?
+final class CellView: NSTableCellView {
+    private let title = NSTextField(labelWithString: "")
+    private let subtitle = NSTextField(labelWithString: "")
 
-    override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let rowIndex = row(at: point)
-        super.mouseDown(with: event)
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 14
+        layer?.backgroundColor = Theme.card.cgColor
+        layer?.borderWidth = 1
+        layer?.borderColor = Theme.cardBorder.cgColor
 
-        if rowIndex >= 0 {
-            clickDelegate?.clipboardTableViewDidClickRow(rowIndex)
-        }
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = Theme.text
+        title.maximumNumberOfLines = 2
+        title.lineBreakMode = .byTruncatingTail
+        title.translatesAutoresizingMaskIntoConstraints = false
+
+        subtitle.font = .systemFont(ofSize: 11)
+        subtitle.textColor = Theme.secondaryText
+        subtitle.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(title)
+        addSubview(subtitle)
+
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 5),
+            subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            subtitle.trailingAnchor.constraint(equalTo: title.trailingAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    func render(_ item: ClipboardItem) {
+        title.stringValue = item.text.replacingOccurrences(of: "\n", with: " ")
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        subtitle.stringValue = formatter.localizedString(for: item.date, relativeTo: Date())
     }
 }
 
-final class ClipboardWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, BoardSearchFieldKeyDelegate, ClipboardTableViewClickDelegate {
+final class ClipboardWindow: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, SearchFieldKeys {
     private let store: ClipboardStore
-    private let tableView = ClipboardTableView()
-    private let scrollView = NSScrollView()
-    private let searchField = BoardSearchField()
-    private let emptyLabel = NSTextField(labelWithString: "Clipboard history is empty")
-    private var filteredItems: [ClipboardItem] = []
-    private weak var targetApplication: NSRunningApplication?
-    private var targetFocusedElement: AXUIElement?
-    private var isOpeningBoard = false
-    private var localKeyMonitor: Any?
-    private var isPasting = false
+    private let target: PasteTarget
+    private let search = SearchField()
+    private let table = NSTableView()
+    private let scroll = NSScrollView()
+    private let empty = NSTextField(labelWithString: "Clipboard history is empty")
+    private var filtered: [ClipboardItem] = []
+    private var keyMonitor: Any?
+    private var opening = false
+    private var pasting = false
 
-    init(store: ClipboardStore) {
+    init(store: ClipboardStore, target: PasteTarget) {
         self.store = store
+        self.target = target
 
-        let window = ClipboardPanel(
+        let panel = ClipboardPanel(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 390),
-            styleMask: [.titled, .nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
+        panel.level = .popUpMenu
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
 
-        window.title = "Clipboard"
-        window.level = .popUpMenu
-        window.isReleasedWhenClosed = false
-        window.hidesOnDeactivate = false
-        window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
-
-        super.init(window: window)
-        setupUI()
+        super.init(window: panel)
+        buildUI()
     }
 
     required init?(coder: NSCoder) {
@@ -141,369 +211,211 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
     }
 
     deinit {
-        removeLocalKeyMonitor()
+        removeKeyMonitor()
     }
 
-    private func setupUI() {
-        guard let contentView = window?.contentView else { return }
+    private func buildUI() {
+        guard let view = window?.contentView else { return }
+        view.wantsLayer = true
+        view.layer?.backgroundColor = Theme.pink.cgColor
+        view.layer?.cornerRadius = 22
+        view.layer?.masksToBounds = true
+        view.layer?.borderWidth = 1
+        view.layer?.borderColor = Theme.palePink.withAlphaComponent(0.75).cgColor
 
-        contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        search.placeholderString = "Search clipboard"
+        search.delegate = self
+        search.keys = self
+        search.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(search)
 
-        searchField.placeholderString = "Search clipboard"
-        searchField.delegate = self
-        searchField.keyDelegate = self
-        searchField.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(searchField)
-
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("clipboard"))
-        column.title = ""
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("clip"))
         column.width = 430
+        table.addTableColumn(column)
+        table.headerView = nil
+        table.rowHeight = 62
+        table.intercellSpacing = NSSize(width: 0, height: 5)
+        table.backgroundColor = .clear
+        table.focusRingType = .none
+        table.selectionHighlightStyle = .regular
+        table.allowsEmptySelection = false
+        table.dataSource = self
+        table.delegate = self
+        table.target = self
+        table.action = #selector(clickedRow)
 
-        tableView.addTableColumn(column)
-        tableView.headerView = nil
-        tableView.rowHeight = 58
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.clickDelegate = self
-        tableView.allowsEmptySelection = false
-        tableView.selectionHighlightStyle = .regular
-        tableView.backgroundColor = .clear
+        scroll.documentView = table
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scroll)
 
-        scrollView.documentView = tableView
-        scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(scrollView)
-
-        emptyLabel.textColor = .secondaryLabelColor
-        emptyLabel.alignment = .center
-        emptyLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(emptyLabel)
+        empty.textColor = Theme.secondaryText
+        empty.alignment = .center
+        empty.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(empty)
 
         NSLayoutConstraint.activate([
-            searchField.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 44),
-            searchField.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            searchField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            searchField.heightAnchor.constraint(equalToConstant: 32),
-
-            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 12),
-            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
-            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
-            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
-
-            emptyLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
-            emptyLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor)
+            search.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
+            search.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+            search.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+            search.heightAnchor.constraint(equalToConstant: 34),
+            scroll.topAnchor.constraint(equalTo: search.bottomAnchor, constant: 14),
+            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+            empty.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
+            empty.centerYAnchor.constraint(equalTo: scroll.centerYAnchor)
         ])
-
-        refresh()
     }
 
     func showBoard() {
-        capturePasteTarget()
-        isOpeningBoard = true
-        isPasting = false
-        searchField.stringValue = ""
-        refresh()
-        positionNearMouse()
-        installLocalKeyMonitor()
+        target.capture()
+        store.sync()
+        opening = true
+        pasting = false
+        search.stringValue = ""
+        reload()
+        moveNearMouse()
+        installKeyMonitor()
         window?.orderFrontRegardless()
         window?.makeKey()
-        searchField.becomeFirstResponder()
-
-        if !filteredItems.isEmpty {
-            selectRow(0)
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.isOpeningBoard = false
+        search.becomeFirstResponder()
+        if !filtered.isEmpty { select(0) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.opening = false
         }
     }
 
-    private func installLocalKeyMonitor() {
-        removeLocalKeyMonitor()
+    private func reload() {
+        let selected = selectedText()
+        let query = search.stringValue.lowercased()
+        filtered = query.isEmpty ? store.items : store.items.filter { $0.text.lowercased().contains(query) }
+        empty.isHidden = !filtered.isEmpty
+        table.reloadData()
+        guard !filtered.isEmpty else { return table.deselectAll(nil) }
+        if let selected, let index = filtered.firstIndex(where: { $0.text == selected }) {
+            select(index)
+        } else {
+            select(0)
+        }
+    }
 
-        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+    private func selectedText() -> String? {
+        let row = table.selectedRow
+        return row >= 0 && row < filtered.count ? filtered[row].text : nil
+    }
+
+    private func select(_ row: Int) {
+        guard row >= 0 && row < filtered.count else { return }
+        table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        table.scrollRowToVisible(row)
+    }
+
+    private func moveNearMouse() {
+        guard let window else { return }
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+        let frame = screen?.visibleFrame ?? .zero
+        let size = window.frame.size
+        var x = mouse.x - size.width / 2
+        var y = mouse.y - size.height - 14
+        x = max(frame.minX + 12, min(x, frame.maxX - size.width - 12))
+        if y < frame.minY + 12 { y = mouse.y + 14 }
+        y = min(y, frame.maxY - size.height - 12)
+        window.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.window?.isVisible == true else { return event }
-
             switch event.keyCode {
-            case 53:
-                self.closeBoardAndRestoreTarget()
-                return nil
-            case 36, 76:
-                self.useSelectedItem()
-                return nil
-            case 126:
-                self.selectPreviousItem()
-                return nil
-            case 125:
-                self.selectNextItem()
-                return nil
-            default:
-                return event
+            case 53: self.closeBoard(); return nil
+            case 36, 76: self.pasteSelected(); return nil
+            case 126: self.moveSelection(-1); return nil
+            case 125: self.moveSelection(1); return nil
+            default: return event
             }
         }
     }
 
-    private func removeLocalKeyMonitor() {
-        if let localKeyMonitor {
-            NSEvent.removeMonitor(localKeyMonitor)
-            self.localKeyMonitor = nil
+    private func removeKeyMonitor() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
         }
     }
 
-    private func capturePasteTarget() {
-        targetFocusedElement = nil
+    private func moveSelection(_ offset: Int) {
+        guard !filtered.isEmpty else { return }
+        let current = table.selectedRow < 0 ? 0 : table.selectedRow
+        let next = (current + offset + filtered.count) % filtered.count
+        select(next)
+    }
 
-        let currentApp = NSRunningApplication.current
-        guard let frontmostApp = NSWorkspace.shared.frontmostApplication,
-              frontmostApp.processIdentifier != currentApp.processIdentifier else { return }
+    private func closeBoard() {
+        removeKeyMonitor()
+        window?.orderOut(nil)
+        target.restore()
+    }
 
-        targetApplication = frontmostApp
+    @objc private func clickedRow() {
+        pasteSelected()
+    }
 
-        let appElement = AXUIElementCreateApplication(frontmostApp.processIdentifier)
-        var focusedValue: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focusedValue)
-
-        if result == .success, let focusedValue {
-            targetFocusedElement = (focusedValue as! AXUIElement)
+    private func pasteSelected() {
+        guard !opening, !pasting else { return }
+        let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
+        guard row >= 0 && row < filtered.count else { return }
+        pasting = true
+        let text = filtered[row].text
+        removeKeyMonitor()
+        window?.orderOut(nil)
+        store.write(text)
+        target.restore()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [weak self] in
+            self?.target.restore()
+            Self.sendCommandV()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
+            self?.pasting = false
         }
     }
 
-    private func positionNearMouse() {
-        guard let window else { return }
-        let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let size = window.frame.size
-
-        var x = mouse.x - size.width / 2
-        var y = mouse.y - size.height - 14
-
-        if x < visibleFrame.minX + 12 { x = visibleFrame.minX + 12 }
-        if x + size.width > visibleFrame.maxX - 12 { x = visibleFrame.maxX - size.width - 12 }
-        if y < visibleFrame.minY + 12 { y = mouse.y + 14 }
-        if y + size.height > visibleFrame.maxY - 12 { y = visibleFrame.maxY - size.height - 12 }
-
-        window.setFrameOrigin(NSPoint(x: x, y: y))
+    private static func sendCommandV() {
+        let source = CGEventSource(stateID: .hidSystemState)
+        let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
+        let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
+        down?.flags = .maskCommand
+        up?.flags = .maskCommand
+        down?.post(tap: .cghidEventTap)
+        up?.post(tap: .cghidEventTap)
     }
 
-    private func refresh() {
-        let selectedText = selectedItemText()
-        let query = searchField.stringValue.lowercased()
+    func controlTextDidChange(_ obj: Notification) { reload() }
+    func searchPressedEscape() { closeBoard() }
+    func searchPressedEnter() { pasteSelected() }
+    func searchPressedUp() { moveSelection(-1) }
+    func searchPressedDown() { moveSelection(1) }
 
-        if query.isEmpty {
-            filteredItems = store.items
-        } else {
-            filteredItems = store.items.filter { $0.text.lowercased().contains(query) }
-        }
+    func numberOfRows(in tableView: NSTableView) -> Int { filtered.count }
 
-        emptyLabel.isHidden = !filteredItems.isEmpty
-        tableView.reloadData()
-
-        if filteredItems.isEmpty {
-            tableView.deselectAll(nil)
-            return
-        }
-
-        if let selectedText, let index = filteredItems.firstIndex(where: { $0.text == selectedText }) {
-            selectRow(index)
-        } else {
-            selectRow(0)
-        }
-    }
-
-    private func selectedItemText() -> String? {
-        let row = tableView.selectedRow
-        guard row >= 0 && row < filteredItems.count else { return nil }
-        return filteredItems[row].text
-    }
-
-    func controlTextDidChange(_ obj: Notification) {
-        refresh()
-    }
-
-    func boardSearchFieldDidPressEscape() {
-        closeBoardAndRestoreTarget()
-    }
-
-    func boardSearchFieldDidPressEnter() {
-        useSelectedItem()
-    }
-
-    func boardSearchFieldDidPressArrowUp() {
-        selectPreviousItem()
-    }
-
-    func boardSearchFieldDidPressArrowDown() {
-        selectNextItem()
-    }
-
-    func clipboardTableViewDidClickRow(_ row: Int) {
-        guard row >= 0 && row < filteredItems.count else { return }
-        selectRow(row)
-        useSelectedItem(row: row)
-    }
-
-    private func selectPreviousItem() {
-        guard !filteredItems.isEmpty else { return }
-        let currentRow = tableView.selectedRow
-        let nextRow = currentRow <= 0 ? filteredItems.count - 1 : currentRow - 1
-        selectRow(nextRow)
-    }
-
-    private func selectNextItem() {
-        guard !filteredItems.isEmpty else { return }
-        let currentRow = tableView.selectedRow
-        let nextRow = currentRow < 0 || currentRow >= filteredItems.count - 1 ? 0 : currentRow + 1
-        selectRow(nextRow)
-    }
-
-    private func selectRow(_ row: Int) {
-        guard row >= 0 && row < filteredItems.count else { return }
-        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        tableView.scrollRowToVisible(row)
-    }
-
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        filteredItems.count
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        RowView()
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard row >= 0 && row < filteredItems.count else { return nil }
-        let cell = ClipboardCell()
-        cell.configure(with: filteredItems[row])
+        let cell = CellView()
+        cell.render(filtered[row])
         return cell
-    }
-
-    override func keyDown(with event: NSEvent) {
-        switch event.keyCode {
-        case 53:
-            closeBoardAndRestoreTarget()
-        case 36, 76:
-            useSelectedItem()
-        case 126:
-            selectPreviousItem()
-        case 125:
-            selectNextItem()
-        default:
-            super.keyDown(with: event)
-        }
-    }
-
-    private func closeBoardAndRestoreTarget() {
-        removeLocalKeyMonitor()
-        window?.orderOut(nil)
-        restorePasteTarget()
-    }
-
-    @objc private func useSelectedItem() {
-        useSelectedItem(row: tableView.selectedRow)
-    }
-
-    private func useSelectedItem(row: Int) {
-        guard !isOpeningBoard else { return }
-        guard !isPasting else { return }
-        guard row >= 0 && row < filteredItems.count else { return }
-
-        isPasting = true
-        let item = filteredItems[row]
-        removeLocalKeyMonitor()
-        window?.orderOut(nil)
-        pasteText(item.text)
-    }
-
-    private func pasteText(_ text: String) {
-        store.setClipboard(text)
-        restorePasteTarget()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.restorePasteTarget()
-            Self.sendPasteShortcut()
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            self?.isPasting = false
-        }
-    }
-
-    private func restorePasteTarget() {
-        if let targetApplication, !targetApplication.isTerminated {
-            targetApplication.activate(options: [.activateIgnoringOtherApps])
-        }
-
-        if let targetFocusedElement {
-            AXUIElementSetAttributeValue(targetFocusedElement, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        }
-    }
-
-    private static func sendPasteShortcut() {
-        let source = CGEventSource(stateID: .hidSystemState)
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
-
-        keyDown?.flags = .maskCommand
-        keyUp?.flags = .maskCommand
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
-    }
-}
-
-final class ClipboardCell: NSTableCellView {
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let detailLabel = NSTextField(labelWithString: "")
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setup()
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    private func setup() {
-        wantsLayer = true
-        layer?.cornerRadius = 8
-
-        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.maximumNumberOfLines = 2
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        detailLabel.font = .systemFont(ofSize: 11)
-        detailLabel.textColor = .secondaryLabelColor
-        detailLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        addSubview(titleLabel)
-        addSubview(detailLabel)
-
-        NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-
-            detailLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 5),
-            detailLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            detailLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor)
-        ])
-    }
-
-    func configure(with item: ClipboardItem) {
-        titleLabel.stringValue = item.text.replacingOccurrences(of: "\n", with: " ")
-        detailLabel.stringValue = formatDate(item.date)
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
 final class HotKeyManager {
-    private var hotKeyRef: EventHotKeyRef?
-    private var handlerRef: EventHandlerRef?
+    private var hotKey: EventHotKeyRef?
+    private var handler: EventHandlerRef?
     private let callback: () -> Void
 
     init(callback: @escaping () -> Void) {
@@ -511,99 +423,83 @@ final class HotKeyManager {
     }
 
     func register() {
-        var hotKeyID = EventHotKeyID(signature: OSType(0x4D43424F), id: UInt32(1))
-        let modifiers = UInt32(cmdKey | shiftKey)
-        let keyCode = UInt32(kVK_ANSI_V)
-
-        RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
-
+        let id = EventHotKeyID(signature: OSType(0x434B4259), id: 1)
+        RegisterEventHotKey(UInt32(kVK_ANSI_V), UInt32(cmdKey | shiftKey), id, GetApplicationEventTarget(), 0, &hotKey)
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let selfPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
+        let pointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        InstallEventHandler(GetApplicationEventTarget(), { _, _, userData in
             guard let userData else { return noErr }
-            let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
-            var hotKeyID = EventHotKeyID()
-            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
-            manager.callback()
+            Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue().callback()
             return noErr
-        }, 1, &eventType, selfPointer, &handlerRef)
+        }, 1, &eventType, pointer, &handler)
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = ClipboardStore()
-    private var windowController: ClipboardWindowController?
-    private var hotKeyManager: HotKeyManager?
+    private let target = PasteTarget()
+    private var board: ClipboardWindow?
+    private var hotKey: HotKeyManager?
     private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        requestAccessibilityIfNeeded()
-
+        AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
         store.start()
-
-        windowController = ClipboardWindowController(store: store)
-        hotKeyManager = HotKeyManager { [weak self] in
+        board = ClipboardWindow(store: store, target: target)
+        hotKey = HotKeyManager { [weak self] in
             DispatchQueue.main.async {
-                self?.store.checkClipboard()
-                self?.windowController?.showBoard()
+                self?.board?.showBoard()
             }
         }
-        hotKeyManager?.register()
-
+        hotKey?.register()
         setupStatusItem()
     }
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-
         if let button = statusItem?.button {
-            if let icon = loadStatusIcon() {
-                button.image = icon
+            if let image = loadStatusIcon() {
+                button.image = image
                 button.imagePosition = .imageOnly
-                button.title = ""
             } else {
                 button.title = "⌘V"
+                button.contentTintColor = Theme.pink
             }
         }
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Open Clipboard", action: #selector(openBoard), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Open Clipboard", action: #selector(openBoardFromMenu), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         statusItem?.menu = menu
     }
 
     private func loadStatusIcon() -> NSImage? {
-        let candidates: [(name: String, isTemplate: Bool)] = [
-            ("StatusIconTemplate", true),
-            ("StatusIcon", false),
-            ("MenuBarIcon", false)
-        ]
-
-        for candidate in candidates {
-            if let iconURL = Bundle.main.url(forResource: candidate.name, withExtension: "png"), let icon = NSImage(contentsOf: iconURL) {
-                icon.isTemplate = candidate.isTemplate
-                icon.size = NSSize(width: 18, height: 18)
-                return icon
-            }
+        for name in ["StatusIconTemplate", "StatusIcon", "MenuBarIcon"] {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "png"), let image = NSImage(contentsOf: url) else { continue }
+            image.size = NSSize(width: 18, height: 18)
+            return tinted(image)
         }
-
         return nil
     }
 
-    private func requestAccessibilityIfNeeded() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        AXIsProcessTrustedWithOptions(options)
+    private func tinted(_ image: NSImage) -> NSImage {
+        let result = NSImage(size: image.size)
+        result.lockFocus()
+        let rect = NSRect(origin: .zero, size: image.size)
+        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+        Theme.pink.setFill()
+        rect.fill(using: .sourceAtop)
+        result.unlockFocus()
+        return result
     }
 
-    @objc private func openBoard() {
-        store.checkClipboard()
-        windowController?.showBoard()
+    @objc private func openBoardFromMenu() {
+        board?.showBoard()
     }
 
-    @objc private func quit() {
+    @objc private func quitApp() {
         NSApp.terminate(nil)
     }
 }
