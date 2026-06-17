@@ -88,7 +88,7 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     private let searchField = BoardSearchField()
-    private let emptyLabel = NSTextField(labelWithString: "Pano geçmişi boş")
+    private let emptyLabel = NSTextField(labelWithString: "Clipboard history is empty")
     private var filteredItems: [ClipboardItem] = []
     private weak var targetApplication: NSRunningApplication?
     private var targetFocusedElement: AXUIElement?
@@ -105,7 +105,7 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
             defer: false
         )
 
-        window.title = "Pano"
+        window.title = "Clipboard"
         window.level = .popUpMenu
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
@@ -118,7 +118,7 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
     }
 
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) desteklenmiyor")
+        fatalError("init(coder:) is not supported")
     }
 
     deinit {
@@ -131,7 +131,7 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
         contentView.wantsLayer = true
         contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
-        searchField.placeholderString = "Panoda ara"
+        searchField.placeholderString = "Search clipboard"
         searchField.delegate = self
         searchField.keyDelegate = self
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -428,7 +428,7 @@ final class ClipboardCell: NSTableCellView {
     }
 
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) desteklenmiyor")
+        fatalError("init(coder:) is not supported")
     }
 
     private func setup() {
@@ -487,7 +487,6 @@ final class HotKeyManager {
         RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
 
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-
         let selfPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
 
         InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
@@ -527,13 +526,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem?.button?.title = "⌘V"
+
+        if let button = statusItem?.button {
+            if let icon = loadStatusIcon() {
+                button.image = icon
+                button.imagePosition = .imageOnly
+                button.title = ""
+            } else {
+                button.title = "⌘V"
+            }
+        }
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Panoyu Aç", action: #selector(openBoard), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Open Clipboard", action: #selector(openBoard), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Çık", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem?.menu = menu
+    }
+
+    private func loadStatusIcon() -> NSImage? {
+        let candidates: [(name: String, isTemplate: Bool)] = [
+            ("StatusIconTemplate", true),
+            ("StatusIcon", false),
+            ("MenuBarIcon", false)
+        ]
+
+        for candidate in candidates {
+            if let iconURL = Bundle.main.url(forResource: candidate.name, withExtension: "png"), let icon = NSImage(contentsOf: iconURL) {
+                icon.isTemplate = candidate.isTemplate
+                icon.size = NSSize(width: 18, height: 18)
+                return icon
+            }
+        }
+
+        return nil
     }
 
     private func requestAccessibilityIfNeeded() {
