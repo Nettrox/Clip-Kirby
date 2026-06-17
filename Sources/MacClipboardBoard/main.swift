@@ -83,9 +83,27 @@ final class BoardSearchField: NSSearchField {
     }
 }
 
-final class ClipboardWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, BoardSearchFieldKeyDelegate {
+protocol ClipboardTableViewClickDelegate: AnyObject {
+    func clipboardTableViewDidClickRow(_ row: Int)
+}
+
+final class ClipboardTableView: NSTableView {
+    weak var clickDelegate: ClipboardTableViewClickDelegate?
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let rowIndex = row(at: point)
+        super.mouseDown(with: event)
+
+        if rowIndex >= 0 {
+            clickDelegate?.clipboardTableViewDidClickRow(rowIndex)
+        }
+    }
+}
+
+final class ClipboardWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, BoardSearchFieldKeyDelegate, ClipboardTableViewClickDelegate {
     private let store: ClipboardStore
-    private let tableView = NSTableView()
+    private let tableView = ClipboardTableView()
     private let scrollView = NSScrollView()
     private let searchField = BoardSearchField()
     private let emptyLabel = NSTextField(labelWithString: "Clipboard history is empty")
@@ -94,6 +112,7 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
     private var targetFocusedElement: AXUIElement?
     private var isOpeningBoard = false
     private var localKeyMonitor: Any?
+    private var isPasting = false
 
     init(store: ClipboardStore) {
         self.store = store
@@ -146,9 +165,7 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
         tableView.rowHeight = 58
         tableView.dataSource = self
         tableView.delegate = self
-        tableView.target = self
-        tableView.action = #selector(useSelectedItem)
-        tableView.doubleAction = #selector(useSelectedItem)
+        tableView.clickDelegate = self
         tableView.allowsEmptySelection = false
         tableView.selectionHighlightStyle = .regular
         tableView.backgroundColor = .clear
@@ -185,17 +202,17 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
     func showBoard() {
         capturePasteTarget()
         isOpeningBoard = true
+        isPasting = false
+        searchField.stringValue = ""
         refresh()
         positionNearMouse()
         installLocalKeyMonitor()
         window?.orderFrontRegardless()
         window?.makeKey()
-        searchField.stringValue = ""
         searchField.becomeFirstResponder()
 
         if !filteredItems.isEmpty {
-            tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
-            tableView.scrollRowToVisible(0)
+            selectRow(0)
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
@@ -237,6 +254,7 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
 
     private func capturePasteTarget() {
         targetFocusedElement = nil
+
         let currentApp = NSRunningApplication.current
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication,
               frontmostApp.processIdentifier != currentApp.processIdentifier else { return }
@@ -321,6 +339,12 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
         selectNextItem()
     }
 
+    func clipboardTableViewDidClickRow(_ row: Int) {
+        guard row >= 0 && row < filteredItems.count else { return }
+        selectRow(row)
+        useSelectedItem(row: row)
+    }
+
     private func selectPreviousItem() {
         guard !filteredItems.isEmpty else { return }
         let currentRow = tableView.selectedRow
@@ -347,10 +371,8 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard row >= 0 && row < filteredItems.count else { return nil }
-
-        let item = filteredItems[row]
         let cell = ClipboardCell()
-        cell.configure(with: item)
+        cell.configure(with: filteredItems[row])
         return cell
     }
 
@@ -376,23 +398,32 @@ final class ClipboardWindowController: NSWindowController, NSTableViewDataSource
     }
 
     @objc private func useSelectedItem() {
+        useSelectedItem(row: tableView.selectedRow)
+    }
+
+    private func useSelectedItem(row: Int) {
         guard !isOpeningBoard else { return }
+        guard !isPasting else { return }
+        guard row >= 0 && row < filteredItems.count else { return }
 
-        let clickedRow = tableView.clickedRow
-        let selectedRow = clickedRow >= 0 ? clickedRow : tableView.selectedRow
-        guard selectedRow >= 0 && selectedRow < filteredItems.count else { return }
-
-        let item = filteredItems[selectedRow]
-        store.setClipboard(item.text)
+        isPasting = true
+        let item = filteredItems[row]
         removeLocalKeyMonitor()
         window?.orderOut(nil)
+        pasteText(item.text)
+    }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+    private func pasteText(_ text: String) {
+        store.setClipboard(text)
+        restorePasteTarget()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             self?.restorePasteTarget()
+            Self.sendPasteShortcut()
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
-            Self.sendPasteShortcut()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.isPasting = false
         }
     }
 
