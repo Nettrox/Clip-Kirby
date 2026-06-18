@@ -1,0 +1,6 @@
+version: "Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2 clang-1700.0.13.5)"
+options: "e25336b702048398ca1468bced6bd18e1065bc42f14f4c27b51042e1853136d2"
+build_start_time: [1781778028, 881655000]
+build_end_time: [1781778030, 25808000]
+inputs:
+  "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/Sources/MacClipboardBoard/main.swift": [1781778018, 420632537]

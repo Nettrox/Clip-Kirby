@@ -1,0 +1,204 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.MacClipboardBoard-arm64-apple-macosx15.0-release.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.build/sources",
+      "importPath" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/Sources/MacClipboardBoard/main.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "MacClipboardBoard",
+      "moduleOutputPath" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/Modules/MacClipboardBoard.swiftmodule",
+      "objects" : [
+        "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.build/main.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-O",
+        "-j8",
+        "-DSWIFT_PACKAGE",
+        "-module-cache-path",
+        "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "MacClipboardBoard_main",
+        "-color-diagnostics",
+        "-swift-version",
+        "5",
+        "-F",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "clip_kirby"
+      ],
+      "outputFileMapPath" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.build/main.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/Modules/MacClipboardBoard.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/Sources/MacClipboardBoard/main.swift"
+      ],
+      "tempsPath" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.build",
+      "wholeModuleOptimization" : true
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "MacClipboardBoard" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "MacClipboardBoard",
+      "-package-name",
+      "clip_kirby",
+      "-whole-module-optimization",
+      "-num-threads",
+      "8",
+      "-c",
+      "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/Sources/MacClipboardBoard/main.swift",
+      "-I",
+      "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-O",
+      "-j8",
+      "-DSWIFT_PACKAGE",
+      "-module-cache-path",
+      "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "MacClipboardBoard_main",
+      "-color-diagnostics",
+      "-swift-version",
+      "5",
+      "-F",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "clip_kirby",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "MacClipboardBoard" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "enableAllTraits" : false
+  },
+  "writeCommands" : {
+    "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/Sources/MacClipboardBoard/main.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.build/sources"
+    },
+    "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.build/main.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/MacClipboardBoard.product/Objects.LinkFileList"
+    },
+    "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/irfanaksu/Documents/GitHub/Clip-Kirby/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+    }
+  }
+}

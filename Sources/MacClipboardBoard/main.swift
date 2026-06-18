@@ -119,7 +119,7 @@ final class RowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         guard selectionHighlightStyle != .none else { return }
         Theme.darkPink.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 8, dy: 4), xRadius: 14, yRadius: 14).fill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 18, dy: 4), xRadius: 14, yRadius: 14).fill()
     }
 
     override func drawBackground(in dirtyRect: NSRect) {}
@@ -181,6 +181,7 @@ final class ClipboardWindow: NSWindowController, NSTableViewDataSource, NSTableV
     private let empty = NSTextField(labelWithString: "Clipboard history is empty")
     private var filtered: [ClipboardItem] = []
     private var keyMonitor: Any?
+    private var mouseMonitor: Any?
     private var opening = false
     private var pasting = false
 
@@ -212,6 +213,7 @@ final class ClipboardWindow: NSWindowController, NSTableViewDataSource, NSTableV
 
     deinit {
         removeKeyMonitor()
+        removeMouseMonitor()
     }
 
     private func buildUI() {
@@ -230,7 +232,9 @@ final class ClipboardWindow: NSWindowController, NSTableViewDataSource, NSTableV
         view.addSubview(search)
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("clip"))
-        column.width = 430
+        column.width = 409
+        column.minWidth = 409
+        column.maxWidth = 409
         table.addTableColumn(column)
         table.headerView = nil
         table.rowHeight = 62
@@ -246,8 +250,18 @@ final class ClipboardWindow: NSWindowController, NSTableViewDataSource, NSTableV
 
         scroll.documentView = table
         scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.horizontalScrollElasticity = .none
+        scroll.usesPredominantAxisScrolling = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
+
+        table.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            table.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor)
+        ])
+
         scroll.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scroll)
 
@@ -271,6 +285,7 @@ final class ClipboardWindow: NSWindowController, NSTableViewDataSource, NSTableV
     }
 
     func showBoard() {
+        installMouseMonitor()
         target.capture()
         store.sync()
         opening = true
@@ -357,6 +372,7 @@ final class ClipboardWindow: NSWindowController, NSTableViewDataSource, NSTableV
 
     private func closeBoard() {
         removeKeyMonitor()
+        removeMouseMonitor()
         window?.orderOut(nil)
         target.restore()
     }
@@ -381,6 +397,25 @@ final class ClipboardWindow: NSWindowController, NSTableViewDataSource, NSTableV
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
             self?.pasting = false
+        }
+    }
+
+    private func installMouseMonitor() {
+        removeMouseMonitor()
+
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.closeBoard()
+            }
+        }
+    }
+
+    private func removeMouseMonitor() {
+        if let mouseMonitor {
+            NSEvent.removeMonitor(mouseMonitor)
+            self.mouseMonitor = nil
         }
     }
 
